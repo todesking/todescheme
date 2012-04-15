@@ -1,0 +1,138 @@
+<html>
+	<head>
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+		<title>jsscheme test</title>
+	</head>
+	<body>
+		<h1>Tiny Scheme implementation with javascript</h1>
+		<h2>description</h2>
+		<p><a href="http://wiki.fdiary.net/ldev/">言語開発合宿</a>で作成した、Scheme(的なもの)のjavascript実装です。</p>
+		<p>継続と末尾再帰最適化まで実装しました。継続のほうは本当に仕様を満足しているかどうか不安ですが。</p>
+		<p>マクロは、ありません</p>
+		<p>詳しい説明は<a href="http://d.hatena.ne.jp/gnarl/20070925/1190715464">blog</a>のほうに。</p>
+		<h2>features</h2>
+		<ul>
+			<li>parse SExpr</li>
+			<li>variable reference</li>
+			<li>create/call closure</li>
+			<li>tail-call optimization</li>
+			<li>continuation</li>
+		</ul>
+		<p>quote ('expr) , dotted pair( (x . y) ) , comment( ;; ) etc is not supported.</p>
+		<h2>console</h2>
+		<form>
+			<textarea id="output" rows="13" cols="40"></textarea>
+			<input type="text" size="80" id="command" />
+			<input type="button" value="eval" onclick="doEval();" />
+			<input type="button" value="clear log" onclick="clrlog();" />
+			<p><input type="checkbox" id="opt_holdlog" /> hold log</p>
+		</form>
+		<h2>Examples</h2>
+		<h3>basic operations</h3>
+<pre>
+1
+(define x 100)
+x
+(set! x 200)
+(list 1 2 3)
+(quote (a b c))
+(+ 1 2 3)
+(- 10 4)
+(if (< x 10) "x < 10" "x >= 10")
+</pre>
+		<h3>closure</h3>
+<pre>
+(define create-counter (lambda (count) (lambda () (set! count (+ count 1)) count)))
+(define incr1 (create-counter 0))
+(define incr2 (create-counter 100))
+(incr1) ;;1
+(incr2) ;;101
+(incr1) ;;2
+(incr1) ;;3
+(incr2) ;;102
+</pre>
+		<h3>continuation</h3>
+<pre>
+(define cc 0)
+(list 1 2 (+ (call/cc (lambda (c) (set! cc c) 1)) 2)) ;;(1 2 3)
+cc ;; #&lt;continuation&gt;
+(cc 0) ;;(1 2 2)
+(cc 10) ;;(1 2 12)
+(cc 100) ;;(1 2 102)
+</pre>
+		<h3>working with javascript</h3>
+<pre>
+(js-eval "alert") ;;returns alert function
+((js-eval "alert") "hello!") ;;hello!
+</pre>
+		<h2>commands</h2>
+		<dl>
+			<dt>(long-log 0|1)</dt>
+			<dd>verbose log on/off(if on, show middle-level code)</dd>
+			<dt>(to-string obj)</dt>
+			<dd>apply js toString method to obj</dd>
+			<dt>(js-eval js_string)</dt>
+			<dd>evaluate string as javascript</dd>
+			<dt>(clr)</dt>
+			<dd>clear log</dl>
+			<dt>_(underscore)</dt>
+			<dd>last result</dd>
+		</ul>
+		<h2>info</h2>
+		<p>this scheme evaluator is based on <a href="http://www.cs.indiana.edu/~dyb/papers/3imp.pdf">RKent Dyvbig, Three implementation models for scheme</a></p>
+		<p>this program using these libraries:</p>
+		<dl>
+			<dt><a href="http://www.prototypejs.org/">prototype.js</a></dt>
+			<dd>useful utilities</dd>
+			<dt>SimpleTest library in <a href="http://www.mochikit.com/">MochiKit</a></dt>
+			<dd>for testing</dd>
+			<dt><a href="http://nanto.asablo.jp/blog/2007/09/12/1793275">Gin</a></dt>
+			<dd>js parser generator library with human-readable definition</dd> 
+		</dl>
+		<script type="text/javascript" src="./prototype.js"> </script>
+		<script type="text/javascript" src="./gin.js"> </script>
+		<script type="text/javascript" src="./scheme.js"> </script>
+		<script type="text/javascript">
+			var logger={
+				info: function(s){$('output').value+=s+'\n';},
+				error: function(s){$('output').value+='**ERROR** '+ s+'\n';}
+			}
+			var empty_logger={info:function(){},error:logger.error}
+			Scheme.Logger=empty_logger;
+			var env=new Environment(Scheme.getDefaultEnvironment());
+			Scheme.evaluate(Scheme.parse('(define tak (lambda (x y z) (if (<= x y) y (tak (tak (- x 1) y z) (tak (- y 1) z x) (tak (- z 1) x y)))))'),env);
+			env.bind('long-log',function(enabled){Scheme.Logger=enabled?logger:empty_logger});
+			env.bind('to-string',function(obj){return obj.toString();});
+			function clrlog() {
+				$('output').value='';
+			}
+			env.bind('clr',clrlog);
+			function doEval() {
+				if(!$F('opt_holdlog')) clrlog();
+				var src=$('command').value;
+				var expr=Scheme.parse(src);
+				if(!expr) {
+					logger.error('Parse error. expr '+src+' is not valid syntax');
+					return false
+				}
+				logger.info('evaluating '+Scheme.inspectSExpr(expr) +'...');
+				var result=Scheme.evaluate(expr,env);
+				logger.info('result: '+Scheme.inspectSExpr(result));
+				if(result!==void(0)) {
+					$('command').value="";
+					env.bind('_',result);
+				}
+				return false;
+			}
+		</script>
+		<script type="text/javascript">
+			$('command').focus();
+			$('command').onkeypress=function(e) {
+				if(e.keyCode==Event.KEY_RETURN) {
+					Event.stop(e);
+					doEval();
+				}
+			}
+		</script>
+	</body>
+</html>

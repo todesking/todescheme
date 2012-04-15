@@ -1,0 +1,336 @@
+
+
+
+jsでScheme
+
+id:gnarl ( http://d.hatena.ne.jp/gnarl/ )
+id:todesking
+
+
+
+
+
+
+
+
+
+
+
+
+
+									あらすじ:
+									言語仕様を
+									考える暇が
+									なかったの
+									でjsでSche
+									me的なもの
+									を作ってお
+									茶を濁した
+
+
+
+
+
+
+
+
+
+
+
+それwebSchemeで
+→ うるさい
+
+実装いっぱいあるよ(ref: http://d.hatena.ne.jp/brazil/20060308/1141795410 )
+→ うるさい
+
+
+
+
+
+
+
+
+
+
+できること
+
+末尾再帰最適化
+
+continuation
+
+マクロなし＞＜
+	マクロが一番難しいですよ
+
+
+
+
+
+
+powerd by
+	prototype.js(おなじみのあれ)
+	SimpleTest(MochiKit付属のjsテストフレームワーク)
+	Gin(パーサジェネレータ for js)
+		http://nanto.asablo.jp/blog/2007/09/12/1793275
+
+
+
+
+
+特徴
+jsのオブジェクトをそのまま使っているので親和性がとても高い
+function呼べる
+
+
+例
+Scheme.parse('1')
+=> 1 (jsの)
+
+
+var environment=Scheme.getDefaultEnvironment();
+env.bind('alert',alert);
+Scheme.evaluate(Scheme.parse(
+	'(alert "とても良かったですね")' ));
+
+とても良かったですね。
+
+
+js-evalとかつくってみた
+(define hello 
+  (js-eval "(function(msg) { alert('hello, '+msg+'!') })"))
+(hello "world")
+
+
+
+
+
+
+
+
+
+
+特徴
+
+末尾再帰最適化
+
+(define f (lambda () (f))) ;;永遠にマシンパワーを食べ続ける
+(define g (lambda () (g) 1)) ;;ヒープ食べまくりで死亡
+
+
+
+
+特徴
+
+continuation!
+
+(define cc 0)
+(list 1 2 (+ (call/cc (lambda (c) (set! cc c) 3)) 4))
+ => (1 2 7)
+
+(cc 100)
+=> (1 2 104)
+(cc 10)
+=> (1 2 14)
+
+
+
+
+
+
+
+
+実行モデル
+
+S式をコンパイルして中間言語に変換、VMで実行
+
+inspired by :
+  Kent Dyvbig, Three implementation models for scheme
+  ref:http://www.cs.indiana.edu/~dyb/papers/3imp.pdf
+その他の資料:
+  ref:http://b.hatena.ne.jp/todesking/Scheme/言語の実装
+
+
+
+
+
+
+
+
+実行モデル
+
+      S式	(foo (quote (1 2 3)))
+ 中間言語	['push', ['halt'],
+			['const', (1 2 3 ),
+			['param',
+			['ref', 'foo',
+			['apply']]]]]
+
+
+
+
+
+
+
+
+実行モデル
+
+中間言語
+  ネットワーク構造
+
+  S式(if x 10 20)のコンパイル結果:
+  ['ref', 'x', 
+  ['test',
+  ['const', 10,
+    ['halt']],
+  ['const', 20,
+   ['halt']]]]
+
+  図示すると
+  [ref x]->[test]-then->[const 10]-+
+              |                    +->[halt]
+			  +---else->[const 20]-+
+
+
+
+
+
+
+
+
+実行モデル
+VM
+  スタックベース(と言うのかしら)
+  レジスタ:
+    ax     式の結果を保持
+    params procに渡すパラメータを保持する
+    frame  スタックフレームのようなもの
+    env    環境(変数名-値の辞書)
+    ip     次に実行する中間コード
+
+
+
+
+
+
+
+
+
+
+実行モデル
+  VMの命令
+    halt 
+        実行を終了する。axレジスタが式の値として返される
+    ref sym next 
+        変数symの値をaxに格納する
+        ipにnextをセット
+    const value next
+        定数(略)
+    param next
+        axレジスタの値をparamスタックに格納する
+    apply
+        axレジスタに格納されたクロージャに制御を移す
+	bindargs [symbols] next
+		symbolsで示された変数にparamsレジスタの値を束縛する
+	push return next
+		現在のparam,envレジスタ、returnで示された戻り先を
+		まとめてframeスタックに積む
+ 	return
+		frameスタックからenv,paramを復帰、指定された戻り先
+		から実行を開始する
+
+
+
+
+
+
+実行モデル
+
+例:変数の参照
+ref x
+halt
+
+
+
+
+例:関数の呼び出し
+(foo 1 x)
+push [halt] ;;スタックに戻り先を積む
+ref x		;;paramレジスタに引数をセット
+param
+const 1
+param		
+ref foo		;;fooを探し、axに積む
+apply		;;実行
+
+foo内でreturnが呼ばれると、スタックに積まれた[halt]に
+制御が移る
+
+
+
+
+末尾再帰最適化
+compile_apply:
+	function(expr,next) {
+		var c=Scheme.Compiler;
+		var args=[];
+		//ToDo: reject Improper list
+		var cur=expr.cdr;
+		for(;cur && cur.isCons;cur=cur.cdr) {
+			args.push(cur.car);
+		}
+		var ops=c.compile(expr.car,['apply']);
+		args.reverse().each(function(a) {
+			ops=c.compile(a,['param',ops]);
+		});
+		if(next[0]!='return')
+			ops=['push',next,ops];
+		return ops;
+	},
+
+(begin
+  (1)
+  (2)
+  (3))
+
+継続
+//in VM
+case 'apply': //apply ;axに入ってるクロージャだか何かを呼ぶ
+	var target=this.ax;
+	if(typeof(target)=='function') { // js function
+		//...
+	} else if(target.isLambda) { // lambda
+		//...
+	} else if(target.isContinuation) { //continuation
+		this.ax=this.params[0];
+		this.frame=target.frame;
+		this.ip=['return'];
+	} else {
+		//...
+	}
+
+
+
+//current-continuation next ; save current frame.
+case 'current-continuation':
+	this.ax={
+	isContinuation: true,
+	frame: this.frame
+	}
+	this.ip=ip[1];
+	break;
+
+//return ;現在のフレームから抜ける。axがretvalとなる
+case 'return':
+	var f=this.frame;
+	this.frame=f.parent;
+	this.params=f.params.clone();
+	this.env=f.env;
+	this.ip=f.next;
+	break;
+
+
+//call/cc procの定義部
+de.bind('call-with-current-continuation',{
+isLambda:true,
+body: ['bindargs',['callback'],['current-continuation',['param',['ref','callback',['apply']]]]],
+env: new Environment(de)
+});
